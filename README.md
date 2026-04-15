@@ -41,11 +41,11 @@ lending-club-grade-prediction/
 
 ## Results
 
-| Model | Weighted F1 | Macro F1 |
-|---|---|---|
-| Random Forest | — | — |
-| XGBoost | — | — |
-| PyTorch MLP | — | — |
+| Model | Weighted F1 | Macro F1 |  Accuracy |
+|---|---|---|---|
+| Random Forest |0.72 | 0.45 | 0.74 | 
+| XGBoost |0.94 | 0.67 | 0.94 |   
+| PyTorch MLP | 0.84 | 0.60 | 0.84 |
 
 ## Running locally
 
