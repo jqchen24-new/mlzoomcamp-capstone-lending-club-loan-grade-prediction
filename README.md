@@ -33,7 +33,7 @@ lending-club-grade-prediction/
 | Step | Description |
 |---|---|
 | EDA | Class distribution, FICO vs grade, interest rate by grade, null analysis, correlation heatmap |
-| Feature engineering | Drop post-origination leakage columns, impute nulls, encode categoricals |
+| Data preprocessing | Drop post-origination leakage columns, impute nulls, encode categoricals |
 | Baseline | Random Forest (scikit-learn) |
 | Neural net | PyTorch MLP with embedding layers for categorical features |
 | Evaluation | Accuracy, Log-loss, Weighted F1, macro F1 |
