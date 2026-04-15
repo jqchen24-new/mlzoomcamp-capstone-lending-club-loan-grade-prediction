@@ -34,8 +34,7 @@ lending-club-grade-prediction/
 |---|---|
 | EDA | Class distribution, FICO vs grade, interest rate by grade, null analysis, correlation heatmap |
 | Feature engineering | Drop post-origination leakage columns, impute nulls, encode categoricals |
-| Baseline | Logistic Regression (scikit-learn) |
-| Tree-based | Random Forest, XGBoost with GPU |
+| Baseline | Random Forest (scikit-learn) |
 | Neural net | PyTorch MLP with embedding layers for categorical features |
 | Evaluation | Weighted F1, macro F1, confusion matrix, classification report |
 | Deployment | Flask API containerized with Docker |
@@ -44,7 +43,6 @@ lending-club-grade-prediction/
 
 | Model | Weighted F1 | Macro F1 |
 |---|---|---|
-| Logistic Regression | — | — |
 | Random Forest | — | — |
 | XGBoost | — | — |
 | PyTorch MLP | — | — |
