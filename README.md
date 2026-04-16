@@ -57,19 +57,33 @@ lending-club-grade-prediction/
 
 ## Running locally
 
+### Prerequisites
+- Python 3.10
+- Docker
+- A trained `predictor.pkl` file (see Training section below)
+
 ### 1. Install dependencies
 ```bash
 pip install -r requirements.txt
 ```
 
-### 2. Train the model
-```bash
-python train.py
-```
-
-### 3. Run the prediction service
+### 2. Run the prediction service
 ```bash
 python predict.py
+```
+
+### 3. Test the API
+```bash
+curl -X POST http://localhost:9696/predict \
+  -H "Content-Type: application/json" \
+  -d '{
+    "loan_amnt": 35000, "annual_inc": 32000, "dti": 42.0,
+    "term": " 60 months", "home_ownership": "RENT",
+    "revol_util": 95.0, "delinq_2yrs": 5, "pub_rec": 2,
+    "pub_rec_bankruptcies": 1, "num_tl_90g_dpd_24m": 4,
+    "pct_tl_nvr_dlq": 40.0, "installment": 950.0,
+    "funded_amnt": 35000, "bc_util": 92.0
+  }'
 ```
 
 ### 4. Build and run with Docker
@@ -78,12 +92,17 @@ docker build -t loan-grade-predictor .
 docker run -p 9696:9696 loan-grade-predictor
 ```
 
-### 5. Test the endpoint
+## Training
+
+> ⚠️ `train.py` requires a GPU. Run on Google Colab with T4 runtime.
+
 ```bash
-curl -X POST http://localhost:9696/predict \
-  -H "Content-Type: application/json" \
-  -d '{"loan_amnt": 10000, "annual_inc": 65000, "dti": 18.5, "fico_range_low": 700, "purpose": "debt_consolidation", "home_ownership": "RENT", "emp_length": "5 years"}'
+# In Colab
+!python train.py
 ```
+
+The script downloads the dataset automatically via `kagglehub` and saves `predictor.pkl`.
+
 
 ## Requirements
 
