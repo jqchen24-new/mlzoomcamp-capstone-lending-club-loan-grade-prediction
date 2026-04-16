@@ -1,0 +1,16 @@
+test.py
+debug_train.py
+
+# Environments
+venv/
+.env
+*.env
+conda-env/
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb_checkpoints
+
+# Data
+*.csv
+*.parquet

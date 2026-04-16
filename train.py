@@ -1,3 +1,4 @@
+# this script needs to run on Colab if we want to use GPU
 import torch
 import torch.nn as nn
 import numpy as np
@@ -54,16 +55,15 @@ class LoanGradeMLP(nn.Module):
     def forward(self, x):
         return self.network(x)
 
-# ── Pipeline class ────────────────────────────────────────────────────────────
-class LoanGradeNNPredictor:
-    def __init__(self, num_classes=7):
-        self.dv          = DictVectorizer(sparse=False)
-        self.scaler      = StandardScaler()
-        self.le          = LabelEncoder()
-        self.num_classes = num_classes
-        self.input_dim   = None
-        self.model       = None
-        self.device      = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+# ── Predictor ─────────────────────────────────────────────────────────────────
+class LoanGradePredictor:
+    def __init__(self):
+        self.dv        = DictVectorizer(sparse=False)
+        self.scaler    = StandardScaler()
+        self.le        = LabelEncoder()
+        self.input_dim = None
+        self.model     = None
+        self.device    = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
     def _make_loader(self, X_tensor, y_tensor, shuffle=False):
         return DataLoader(
@@ -77,31 +77,21 @@ class LoanGradeNNPredictor:
     def _prepare_X(self, records, fit=False):
         if isinstance(records, pd.DataFrame):
             records = records.to_dict(orient='records')
-        if fit:
-            X = self.dv.fit_transform(records)
-        else:
-            X = self.dv.transform(records)
+        X = self.dv.fit_transform(records) if fit else self.dv.transform(records)
         X = np.nan_to_num(X, nan=0.0, posinf=0.0, neginf=0.0)
-        if fit:
-            X = self.scaler.fit_transform(X)
-        else:
-            X = self.scaler.transform(X)
+        X = self.scaler.fit_transform(X) if fit else self.scaler.transform(X)
         return X
 
     def fit(self, df_train, df_val, num_epochs=50):
-        # Prepare features
         X_train = self._prepare_X(df_train.drop('grade', axis=1), fit=True)
         X_val   = self._prepare_X(df_val.drop('grade', axis=1),   fit=False)
 
-        # Encode target
         y_train_enc = self.le.fit_transform(df_train['grade'])
         y_val_enc   = self.le.transform(df_val['grade'])
 
-        # Build model
         self.input_dim = X_train.shape[1]
-        self.model = LoanGradeMLP(self.input_dim, self.num_classes).to(self.device)
+        self.model     = LoanGradeMLP(self.input_dim, num_classes=7).to(self.device)
 
-        # Tensors and loaders
         train_loader = self._make_loader(
             torch.FloatTensor(X_train), torch.LongTensor(y_train_enc), shuffle=True
         )
@@ -109,7 +99,6 @@ class LoanGradeNNPredictor:
             torch.FloatTensor(X_val), torch.LongTensor(y_val_enc)
         )
 
-        # Loss, optimizer, scheduler
         class_counts  = np.bincount(y_train_enc)
         class_weights = torch.FloatTensor(1.0 / class_counts).to(self.device)
         class_weights = class_weights / class_weights.sum()
@@ -120,7 +109,10 @@ class LoanGradeNNPredictor:
             optimizer, mode='min', patience=3, factor=0.5
         )
 
-        best_val_loss = float('inf')
+        best_val_loss    = float('inf')
+        best_weights     = None
+        patience_counter = 0
+        early_stop       = 10
 
         for epoch in range(num_epochs):
             # Train
@@ -154,34 +146,31 @@ class LoanGradeNNPredictor:
             val_acc  = correct / len(val_loader.dataset)
 
             scheduler.step(val_loss)
-            print(f"Epoch {epoch+1:02d} | Train Loss: {train_loss:.4f}  Acc: {train_acc:.4f} | Val Loss: {val_loss:.4f}  Acc: {val_acc:.4f}")
+            print(f"Epoch {epoch+1:02d} | Train Loss: {train_loss:.4f}  Acc: {train_acc:.4f} | "
+                  f"Val Loss: {val_loss:.4f}  Acc: {val_acc:.4f}")
 
             if val_loss < best_val_loss:
-                best_val_loss = val_loss
-                # Store best weights inside the object
-                self._best_weights = {k: v.cpu().clone() for k, v in self.model.state_dict().items()}
+                best_val_loss    = val_loss
+                best_weights     = {k: v.cpu().clone() for k, v in self.model.state_dict().items()}
+                patience_counter = 0
                 print("  -> Best model saved")
+            else:
+                patience_counter += 1
+                if patience_counter >= early_stop:
+                    print(f"Early stopping at epoch {epoch+1}")
+                    break
 
         # Restore best weights
-        self.model.load_state_dict(self._best_weights)
+        self.model.load_state_dict(best_weights)
         self.model.eval()
         return self
 
     def predict(self, df):
-        """Accept a dataframe or list of dicts"""
         X = self._prepare_X(df)
-        loader = self._make_loader(
-            torch.FloatTensor(X),
-            torch.LongTensor(np.zeros(len(X), dtype=int))  # dummy labels
-        )
-        self.model.eval()
-        all_preds = []
         with torch.no_grad():
-            for X_batch, _ in loader:
-                X_batch = X_batch.to(self.device, non_blocking=True)
-                preds   = self.model(X_batch).argmax(1).cpu().numpy()
-                all_preds.extend(preds)
-        return self.le.inverse_transform(all_preds)
+            X_tensor = torch.FloatTensor(X).to(self.device)
+            preds    = self.model(X_tensor).argmax(1).cpu().numpy()
+        return self.le.inverse_transform(preds)
 
     def evaluate(self, df, label='Evaluation'):
         y_true = df['grade'].values
@@ -191,60 +180,61 @@ class LoanGradeNNPredictor:
         print(f"Weighted F1: {f1_score(y_true, y_pred, average='weighted'):.4f}")
         print(f"Macro F1:    {f1_score(y_true, y_pred, average='macro'):.4f}")
 
+    def save(self, path='predictor.pkl'):
+        """Move model to CPU before saving to avoid GPU/CPU issues."""
+        self.model  = self.model.cpu()
+        self.device = torch.device('cpu')
+        joblib.dump(self, path)
+        print(f"Saved: {path} ({os.path.getsize(path) / 1e6:.1f} MB)")
+
+    @classmethod
+    def load(cls, path='predictor.pkl'):
+        """Load predictor on available device."""
+        predictor        = joblib.load(path)
+        predictor.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        predictor.model  = predictor.model.to(predictor.device)
+        predictor.model.eval()
+        return predictor
+
 # ── Data loading ──────────────────────────────────────────────────────────────
-def load_data(nrows=75000):
+def load_data(nrows=500000):
     path = kagglehub.dataset_download("adarshsng/lending-club-loan-data-csv")
-    df = pd.read_csv(os.path.join(path, 'loan.csv'), nrows=nrows, low_memory=False)
+    df   = pd.read_csv(os.path.join(path, 'loan.csv'), nrows=nrows, low_memory=False)
 
-    drop_missing_columns = list(df.columns[df.isnull().sum() > nrows * 0.5])
-    df.drop(columns=drop_missing_columns, inplace=True)
+    # Drop high-null columns
+    df.drop(columns=list(df.columns[df.isnull().mean() > 0.5]), inplace=True)
 
-    selector   = VarianceThreshold(threshold=0.01)
+    # Variance threshold
     numeric_cols = df.select_dtypes(include='number').columns
+    selector     = VarianceThreshold(threshold=0.01)
     selector.fit(df[numeric_cols])
     kept = numeric_cols[selector.get_support()]
     df   = df[kept.tolist() + list(df.select_dtypes(include='object').columns)]
 
-    for var in list(df.select_dtypes(include='object').columns):
-        if df[var].nunique() > 10:
-            df = df.drop(columns=var)
+    # Drop high-cardinality categoricals
+    for col in list(df.select_dtypes(include='object').columns):
+        if df[col].nunique() > 10:
+            df = df.drop(columns=col)
 
-
+    # Drop leakage columns
     leakage_cols = [
-        # Post-origination payment data
-        'total_pymnt', 'total_pymnt_inv', 'total_rec_prncp',
-        'total_rec_int', 'total_rec_late_fee', 'recoveries',
-        'collection_recovery_fee', 'last_pymnt_amnt',
-        'out_prncp', 'out_prncp_inv', 'disbursement_method',
-        
-        # Loan status after origination
-        'loan_status',
-        
-        # Payment plan info
-        'pymnt_plan',
-        
-        # Next payment date (post-origination)
-        'last_pymnt_d', 'next_pymnt_d', 
-        
-        # Hardship/settlement (post-origination)
-        'hardship_flag', 'debt_settlement_flag',
-        
-        # Already removing these
-        'int_rate', 'sub_grade'
+        'total_pymnt', 'total_pymnt_inv', 'total_rec_prncp', 'total_rec_int',
+        'total_rec_late_fee', 'recoveries', 'collection_recovery_fee',
+        'last_pymnt_amnt', 'out_prncp', 'out_prncp_inv', 'disbursement_method',
+        'loan_status', 'pymnt_plan', 'last_pymnt_d', 'next_pymnt_d',
+        'hardship_flag', 'debt_settlement_flag', 'int_rate', 'sub_grade'
     ]
     df = df.drop(columns=[c for c in leakage_cols if c in df.columns])
-
     df = df[df['grade'].notna()]
 
+    print(f"Dataset shape: {df.shape}")
+    print(f"Grade distribution:\n{df['grade'].value_counts().sort_index()}")
     return df
 
 # ── Main ──────────────────────────────────────────────────────────────────────
 if __name__ == '__main__':
     print('Loading data...')
-
-    nrows = 500000
-
-    df = load_data(nrows=nrows)
+    df = load_data(nrows=500000)
 
     df_full_train, df_test = train_test_split(
         df, test_size=0.2, random_state=42, stratify=df['grade']
@@ -252,11 +242,10 @@ if __name__ == '__main__':
     df_train, df_val = train_test_split(
         df_full_train, test_size=0.25, random_state=42, stratify=df_full_train['grade']
     )
-
     print(f"Train: {df_train.shape} | Val: {df_val.shape} | Test: {df_test.shape}")
 
     # Train
-    predictor = LoanGradeNNPredictor(num_classes=7)
+    predictor = LoanGradePredictor()
     predictor.fit(df_train, df_val, num_epochs=50)
 
     # Evaluate
@@ -264,10 +253,26 @@ if __name__ == '__main__':
     predictor.evaluate(df_val,   label='Validation')
     predictor.evaluate(df_test,  label='Test')
 
+    # Sanity check
+    low_risk = pd.DataFrame([{
+        "loan_amnt": 10000, "funded_amnt": 10000, "installment": 320.0,
+        "annual_inc": 120000, "dti": 8.5, "revol_util": 12.5,
+        "delinq_2yrs": 0, "inq_last_6mths": 0, "pub_rec": 0,
+        "term": " 36 months", "home_ownership": "MORTGAGE",
+        "verification_status": "Verified"
+    }])
+    high_risk = pd.DataFrame([{
+        "loan_amnt": 35000, "funded_amnt": 35000, "installment": 950.0,
+        "annual_inc": 32000, "dti": 42.0, "revol_util": 95.0,
+        "delinq_2yrs": 5, "pub_rec": 2, "num_tl_90g_dpd_24m": 4,
+        "pct_tl_nvr_dlq": 40.0, "pub_rec_bankruptcies": 1,
+        "term": " 60 months", "home_ownership": "RENT",
+        "verification_status": "Not Verified"
+    }])
+    print(f"\nLow risk sanity check:  {predictor.predict(low_risk)[0]}")
+    print(f"High risk sanity check: {predictor.predict(high_risk)[0]}")
+
     # Save — one file only
-    print('\nSaving model...')
-    joblib.dump(predictor, 'model.pkl')
-    print('Saved: model.pkl')
-    print('Done.')
-    print('Printing feature names...')
+    predictor.save('predictor.pkl')
+    print('\nFeature names:')
     print(predictor.dv.feature_names_)

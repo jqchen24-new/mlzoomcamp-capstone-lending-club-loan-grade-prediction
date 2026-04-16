@@ -22,7 +22,7 @@ lending-club-grade-prediction/
 ├── notebook.ipynb          # EDA, feature engineering, model training
 ├── train.py                # training script (exported from notebook)
 ├── predict.py              # Flask prediction service
-├── model.pkl               # serialized pipeline
+├── predictor.pkl               # serialized pipeline
 ├── Dockerfile
 ├── requirements.txt
 └── README.md
