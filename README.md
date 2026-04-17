@@ -92,37 +92,6 @@ docker build -t loan-grade-predictor .
 docker run -p 9696:9696 loan-grade-predictor
 ```
 
-## Training
-
-> ⚠️ For best results, run `train.py` on Google Colab with T4 GPU runtime.
-
-**On Colab (recommended):**
-```bash
-!python train.py
-```
-
-**Locally on CPU (faster, fewer rows):**
-```bash
-python train.py --cpu --nrows 150000
-```
-
-The script downloads the dataset automatically via `kagglehub` and saves `predictor.pkl`.
-
-
-## Requirements
-
-```
-pandas
-scikit-learn==1.6.1
-xgboost
-torch
-fastapi
-uvicorn
-kagglehub
-joblib
-numpy
-```
-
 ## Cloud Deployment
 
 The model is deployed on Railway and publicly accessible.
@@ -158,6 +127,37 @@ curl -X POST https://lending-club-loan-grade-prediction-production.up.railway.ap
 Visit the live Swagger UI:
 ```
 https://lending-club-loan-grade-prediction-production.up.railway.app/docs
+```
+
+## Training
+
+> ⚠️ For best results, run `train.py` on Google Colab with T4 GPU runtime.
+
+**On Colab (recommended):**
+```bash
+!python train.py
+```
+
+**Locally on CPU (faster, fewer rows):**
+```bash
+python train.py --cpu --nrows 150000
+```
+
+The script downloads the dataset automatically via `kagglehub` and saves `predictor.pkl`.
+
+
+## Requirements
+
+```
+pandas
+scikit-learn==1.6.1
+xgboost
+torch
+fastapi
+uvicorn
+kagglehub
+joblib
+numpy
 ```
 
 ## Acknowledgements
