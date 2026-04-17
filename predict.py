@@ -1,74 +1,10 @@
 import torch
-import torch.nn as nn
 import numpy as np
 import pandas as pd
-import joblib
 from fastapi import FastAPI
 from pydantic import BaseModel
 from typing import Optional
-from torch.utils.data import Dataset, DataLoader
-from sklearn.preprocessing import LabelEncoder, StandardScaler
-from sklearn.feature_extraction import DictVectorizer
-
-# ── Class definitions — must match train.py exactly ───────────────────────────
-class LoanDataset(Dataset):
-    def __init__(self, X, y):
-        self.X = X
-        self.y = y
-    def __len__(self):
-        return len(self.y)
-    def __getitem__(self, idx):
-        return self.X[idx], self.y[idx]
-
-class LoanGradeMLP(nn.Module):
-    def __init__(self, input_dim, num_classes=7):
-        super(LoanGradeMLP, self).__init__()
-        self.network = nn.Sequential(
-            nn.Linear(input_dim, 512), nn.BatchNorm1d(512), nn.ReLU(), nn.Dropout(0.3),
-            nn.Linear(512, 256),       nn.BatchNorm1d(256), nn.ReLU(), nn.Dropout(0.3),
-            nn.Linear(256, 128),       nn.BatchNorm1d(128), nn.ReLU(), nn.Dropout(0.2),
-            nn.Linear(128, num_classes)
-        )
-    def forward(self, x):
-        return self.network(x)
-
-class LoanGradePredictor:
-    def __init__(self):
-        self.dv        = DictVectorizer(sparse=False)
-        self.scaler    = StandardScaler()
-        self.le        = LabelEncoder()
-        self.input_dim = None
-        self.model     = None
-        self.device    = torch.device('cpu')
-
-    def _prepare_X(self, records, fit=False):
-        if isinstance(records, pd.DataFrame):
-            records = records.to_dict(orient='records')
-        X = self.dv.fit_transform(records) if fit else self.dv.transform(records)
-        X = np.nan_to_num(X, nan=0.0, posinf=0.0, neginf=0.0)
-        X = self.scaler.fit_transform(X) if fit else self.scaler.transform(X)
-        return X
-
-    def predict(self, df):
-        X = self._prepare_X(df)
-        with torch.no_grad():
-            X_tensor = torch.FloatTensor(X).to(self.device)
-            preds    = self.model(X_tensor).argmax(1).cpu().numpy()
-        return self.le.inverse_transform(preds)
-
-    def save(self, path='predictor.pkl'):
-        self.model  = self.model.cpu()
-        self.device = torch.device('cpu')
-        joblib.dump(self, path)
-        print(f"Saved: {path}")
-
-    @classmethod
-    def load(cls, path='predictor.pkl'):
-        predictor        = joblib.load(path)
-        predictor.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-        predictor.model  = predictor.model.to(predictor.device)
-        predictor.model.eval()
-        return predictor
+from model import LoanGradePredictor
 
 # ── Load model ────────────────────────────────────────────────────────────────
 predictor = LoanGradePredictor.load('predictor.pkl')
